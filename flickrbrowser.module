@@ -1,0 +1,179 @@
+<?php
+
+/**
+ * Implements hook_page_build().
+ */
+function flickrbrowser_page_build(&$page) {
+
+  // Add the api key to the Drupal js settings object.
+  drupal_add_js(array(
+    'flickrbrowser' => array(
+      'api_key' => variable_get('flickr_api_key', array()),
+    ),
+  ), array('type' => 'setting', 'scope' => JS_DEFAULT));
+
+  $path = drupal_get_path('module', 'flickrbrowser');
+  
+  drupal_add_css($path . '/flickrbrowser.css');
+  drupal_add_js($path . '/flickrbrowser.js');
+  drupal_add_js($path . '/quickpager.jquery.js');
+}
+
+/**
+ * Implements hook_field_widget_info().
+ */
+function flickrbrowser_field_widget_info() {
+  return array(
+    'flickrbrowser' => array(
+      'label' => 'Flickr Photo with Browser',
+      'field types' => array('flickrfield'),
+      'behaviors' => array(
+        'multiple values' => FIELD_BEHAVIOR_DEFAULT,
+        'default value' => FIELD_BEHAVIOR_DEFAULT,
+       ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_element_info().
+ */
+function flickrbrowser_element_info() {
+  return array(
+    'flickrbrowser' => array(
+      '#input' => TRUE,
+      '#columns' => array('type', 'id', 'uid'),
+      '#process' => array('flickrbrowser_form_process_flickrbrowser'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_widget_form().
+ */
+function flickrbrowser_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+
+  $element = array(  
+    '#type' => $instance['widget']['type'],
+    '#default_value' => isset($items[$delta]) ? $items[$delta] : '',
+  ); 
+  
+  return $element;
+}
+
+/**
+ * @todo Please document this function.
+ * @see http://drupal.org/node/1354
+ */
+function flickrbrowser_form_process_flickrbrowser($element, $form_state, $form = array()) {
+
+  // Load the flickr include file
+  require_once DRUPAL_ROOT . '/' . drupal_get_path('module', 'flickr') . '/flickr.inc';
+  // Get the nsid, api key and secret
+  $nsid = variable_get('flickr_default_userid', '');
+  // Get all photosets for our nsid
+  $sets = flickr_photoset_get_list($nsid);
+  
+  // Set initial photoset array element blank for the select list
+  $photosets = array('' => '');
+
+  // Populate the photoset list with returned values from flickr
+  foreach ($sets as $set) {
+    $photosets[$set['id']] = t($set['title']['_content']);
+  }
+  
+  // If the photo id is not empty grab the image from flickr
+  if (!empty($element['#value']['id'])) {
+    $photoinfo = flickr_photo_get_info($element['#value']['id']);
+    $photo = flickr_img($photoinfo, 's');
+  }
+
+  // If we do indeed have a photo hide the browser, otherwise hide the remove link
+  if (isset($photo)) {
+    $hidebrowser = "hide";
+    $hideremove = "";
+  }
+  else {
+    $photo = "";
+    $hidebrowser = "";
+    $hideremove = "hide";
+  }
+
+  // Manually set the element type and hide it
+  $element['type'] = array(
+    '#type' => 'hidden',
+    '#value' => 'photo_id',
+    '#default_value' => 'photo_id',
+  );
+
+  // Id value, has attributes and prefix/suffix classes for the images
+  $element['id'] = array(
+    '#type' => 'hidden',
+    '#title' => t('Item id'),
+    '#default_value' => !empty($element['#value']['id']) ? $element['#value']['id'] : '',
+    '#prefix' => '<div class="photo-selected">' . $photo . '</div>',
+    '#suffix' => '<div class="photo-remove ' . $hideremove . '"><a class="remove-selected">Remove</a></div>',
+    '#attributes' => array('class' => array('flickr-id')),
+  );
+
+  // Set the nsid to the sites default and don't allow it to be changed
+  $element['nsid'] = array(
+    '#type' => 'hidden',
+    '#default_value' => !empty($element['#value']['nsid']) ? $element['#value']['nsid'] : variable_get('flickr_default_userid', ''),
+    '#value' => !empty($element['#value']['nsid']) ? $element['#value']['nsid'] : variable_get('flickr_default_userid', ''),
+  );
+
+  // Photoset list element
+  $element['photoset'] = array(
+    '#type' => 'select',
+    '#default_value' => t(''),
+    '#title' => t('Select Photoset'),
+    '#options' => $photosets,
+    '#attributes' => array('class' => array('photoset-selector')),
+    '#prefix' => '<div class="flickrbrowser ' . $hidebrowser . '">',
+    '#suffix' => '<div class="photo-selector"></div></div>',
+  );
+
+  return $element;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function flickrbrowser_theme() {
+  
+  $theme = array(
+    'flickrbrowser' => array(
+      'variables' => array('element' => NULL),
+	  'template' => 'flickrbrowser'
+    ),
+  );
+  
+  return $theme;
+
+}
+
+/**
+ * Theme for the form element.
+ *
+ * The form is already rendered by the child elements by the time it comes back here,
+ * just group each delta grouping into its own fieldset.
+ */
+
+function theme_flickrbrowser($variables) {
+  //$test = "TESTING";
+  
+  $element = $variables['element'];
+  $field = field_info_field($element['#field_name']);
+  
+  $fieldset = array(
+    '#value' => $element['#children'],
+    '#collapsible' => FALSE,
+    '#collapsed' => FALSE,
+    '#description' => $element['#description'],
+    '#attributes' => array('class' => array('flickrbrowser-wrapper')),
+  );
+  return theme('fieldset', $fieldset);
+  
+  //return $test;
+}
